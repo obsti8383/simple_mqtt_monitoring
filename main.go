@@ -7,11 +7,11 @@ import (
 	//"time"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
-	//	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
-	//	"github.com/shirou/gopsutil/host"
+	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
-	//	"github.com/shirou/gopsutil/net"
+	"github.com/shirou/gopsutil/net"
 )
 
 //define a function for the default message handler
@@ -49,10 +49,7 @@ func main() {
 	// memory
 	vmStat, err := mem.VirtualMemory()
 	dealwithErr(err)
-
-	text := fmt.Sprintf("%f", vmStat.UsedPercent)
-	token := c.Publish(publishUri+"/usedmem", 0, false, text)
-	token.Wait()
+	sendMQTT(c, publishUri+"/usedmem", vmStat.UsedPercent)
 
 	// disk - start from "/" mount point for Linux
 	// might have to change for Windows!!
@@ -60,32 +57,26 @@ func main() {
 	// then use "\" instead of "/"
 	diskStat, err := disk.Usage("/")
 	dealwithErr(err)
-	text = fmt.Sprintf("%f", diskStat.UsedPercent)
-	token = c.Publish(publishUri+"/usedrootfs", 0, false, text)
-	token.Wait()
+	sendMQTT(c, publishUri+"/usedrootfs", diskStat.UsedPercent)
 
-	/*	// cpu - get CPU number of cores and speed
-		cpuStat, err := cpu.Info()
-		dealwithErr(err)
-		percentage, err := cpu.Percent(0, true)
-		dealwithErr(err)
+	// cpu - get CPU number of cores and speed
+	//cpuStat, err := cpu.Info()
+	//dealwithErr(err)
+	percentage, err := cpu.Percent(0, true)
+	dealwithErr(err)
+	sendMQTT(c, publishUri+"/cpuPercentage", percentage)
 
-		// host or machine kernel, uptime, platform Info
-		hostStat, err := host.Info()
-		dealwithErr(err)
+	// host or machine kernel, uptime, platform Info
+	hostStat, err := host.Info()
+	dealwithErr(err)
+	sendMQTT(c, publishUri+"/uptime", hostStat.Uptime)
 
-		// get interfaces MAC/hardware address
-		interfStat, err := net.Interfaces()
-		dealwithErr(err)
+	// get interfaces MAC/hardware address
+	interfStat, err := net.Interfaces()
+	dealwithErr(err)
+	// TODO: iterate interfaces
+	sendMQTT(c, publishUri+"/interfaces", interfStat[0].Addrs[0].Addr)
 
-		//////
-		for i := 0; i < 5; i++ {
-			text := fmt.Sprintf("this is msg #%d!", i)
-			token := c.Publish(publishUri, 0, false, text)
-			token.Wait()
-			fmt.Println("Published to " + publishUri)
-		}
-	*/
 	/*time.Sleep(3 * time.Second)
 
 	//unsubscribe from /go-mqtt/sample
@@ -95,4 +86,24 @@ func main() {
 	}*/
 
 	c.Disconnect(250)
+}
+
+func dealwithErr(err error) {
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func sendMQTT(client MQTT.Client, uri string, message interface{}) {
+	var token MQTT.Token
+	switch m := message.(type) {
+	case string:
+		token = client.Publish(uri, 0, false, m)
+	case float64, float32, []float64, []float32:
+		token = client.Publish(uri, 0, false, fmt.Sprintf("%f", m))
+	case uint, uint64, uint32:
+		token = client.Publish(uri, 0, false, fmt.Sprintf("%d", m))
+	}
+	token.Wait()
+
 }
